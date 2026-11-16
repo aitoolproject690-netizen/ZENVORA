@@ -152,7 +152,7 @@ export function getVideoMimeType() {
   return candidates.find(candidate => MediaRecorder.isTypeSupported(candidate[0])) || null
 }
 
-function drawFrame(ctx, scene, index, elapsed, width, height) {
+function drawFrame(ctx, scene, index, elapsed, width, height, sceneImage = null) {
   const hues = [265, 205, 28, 155, 320]
   const hue = hues[index % hues.length]
   const gradient = ctx.createLinearGradient(0, 0, width, height)
@@ -160,6 +160,17 @@ function drawFrame(ctx, scene, index, elapsed, width, height) {
   gradient.addColorStop(1, 'hsl(' + ((hue + 65) % 360) + ' 58% 6%)')
   ctx.fillStyle = gradient
   ctx.fillRect(0, 0, width, height)
+  if (sceneImage) {
+    const scale = Math.max(width / sceneImage.width, height / sceneImage.height)
+    const drawWidth = sceneImage.width * scale
+    const drawHeight = sceneImage.height * scale
+    ctx.drawImage(sceneImage, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight)
+    const shade = ctx.createLinearGradient(0, height * 0.42, 0, height)
+    shade.addColorStop(0, 'rgba(5,5,12,0)')
+    shade.addColorStop(1, 'rgba(5,5,12,.88)')
+    ctx.fillStyle = shade
+    ctx.fillRect(0, 0, width, height)
+  }
   const pulse = 0.84 + Math.sin(elapsed / 650) * 0.08
   const glow = ctx.createRadialGradient(width * 0.73, height * 0.31, 8, width * 0.73, height * 0.31, width * 0.42)
   glow.addColorStop(0, 'hsla(' + (hue + 35) + ', 95%, 70%, .8)')
@@ -200,6 +211,15 @@ function drawFrame(ctx, scene, index, elapsed, width, height) {
 
 export async function renderStoryboardVideo(scenes, { secondsPerScene = 3, fps = 24 } = {}) {
   if (!Array.isArray(scenes) || !scenes.length) throw new Error('Add at least one storyboard scene before exporting.')
+  const sceneImages = await Promise.all(scenes.map(scene => {
+    if (!scene.imageDataUrl) return Promise.resolve(null)
+    return new Promise(resolve => {
+      const image = new Image()
+      image.onload = () => resolve(image)
+      image.onerror = () => resolve(null)
+      image.src = scene.imageDataUrl
+    })
+  }))
   if (typeof document === 'undefined' || typeof MediaRecorder === 'undefined') throw new Error('This browser does not support video recording.')
   const supported = getVideoMimeType()
   if (!supported) throw new Error('This browser does not report a supported MP4 or WebM recording format.')
@@ -222,7 +242,7 @@ export async function renderStoryboardVideo(scenes, { secondsPerScene = 3, fps =
       const started = performance.now()
       const length = clamp(Number(scenes[index].duration) || secondsPerScene, 2, 12) * 1000
       while (performance.now() - started < length) {
-        drawFrame(ctx, scenes[index], index, performance.now() - started, canvas.width, canvas.height)
+        drawFrame(ctx, scenes[index], index, performance.now() - started, canvas.width, canvas.height, sceneImages[index])
         await new Promise(resolve => requestAnimationFrame(resolve))
       }
     }
