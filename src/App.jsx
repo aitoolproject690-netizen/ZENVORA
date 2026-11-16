@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { Home, FolderOpen, Plus, WandSparkles, UserRound, Search, Bell, ArrowUpRight, Play, Image, Video, Mic2, Sparkles, Clock3, MoreHorizontal, ChevronRight, SlidersHorizontal, Layers3, Download, Settings, Menu, X, Check } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Home, FolderOpen, Plus, WandSparkles, UserRound, Search, Bell, ArrowUpRight, Play, Image, Video, Mic2, Sparkles, Clock3, MoreHorizontal, ChevronRight, SlidersHorizontal, Layers3, Download, Settings, Menu, X, Check, Trash2 } from 'lucide-react'
 
 const initialProjects = [
   { id: 1, title: 'Neon Dreams', type: 'Video', status: 'In progress', updated: '2 hours ago', color: 'violet', icon: 'video' },
@@ -10,7 +10,21 @@ const nav = [{ id: 'home', label: 'Home', Icon: Home }, { id: 'projects', label:
 
 function App() {
   const [page, setPage] = useState('home')
-  const [projects, setProjects] = useState(initialProjects)
+  const [projects, setProjects] = useState(() => {
+    try {
+      const saved = localStorage.getItem('zenvora.projects.v1')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (Array.isArray(parsed)) return parsed
+      }
+    } catch {}
+    return initialProjects.map(project => ({ ...project, prompt: '', scenes: [] }))
+  })
+  const [selectedProjectId, setSelectedProjectId] = useState(() => {
+    try { return Number(localStorage.getItem('zenvora.selected-project.v1')) || null }
+    catch { return null }
+  })
+  const [sceneDraft, setSceneDraft] = useState('')
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('All')
   const [prompt, setPrompt] = useState('')
@@ -18,8 +32,41 @@ function App() {
   const [toast, setToast] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
   const filtered = useMemo(() => projects.filter(p => (p.title.toLowerCase().includes(query.toLowerCase())) && (filter === 'All' || p.type === filter)), [projects, query, filter])
+  const selectedProject = projects.find(project => project.id === selectedProjectId) || null
+  const selectedScenes = selectedProject?.scenes || []
+  useEffect(() => {
+    try { localStorage.setItem('zenvora.projects.v1', JSON.stringify(projects)) } catch {}
+  }, [projects])
+  useEffect(() => {
+    try {
+      if (selectedProjectId) localStorage.setItem('zenvora.selected-project.v1', String(selectedProjectId))
+      else localStorage.removeItem('zenvora.selected-project.v1')
+    } catch {}
+  }, [selectedProjectId])
   const notify = (msg) => { setToast(msg); window.setTimeout(() => setToast(''), 2400) }
-  const createProject = () => { if (!prompt.trim()) return notify('Add a short idea first'); const p = { id: Date.now(), title: prompt.trim().slice(0, 32), type: kind, status: 'Draft', updated: 'Just now', color: 'violet', icon: kind.toLowerCase() }; setProjects([p, ...projects]); setPrompt(''); setPage('projects'); notify('Your draft is ready') }
+  const openProject = (id) => { setSelectedProjectId(id); setSceneDraft(''); setPage('studio') }
+  const createProject = () => {
+    if (!prompt.trim()) return notify('Add a short idea first')
+    const p = { id: Date.now(), title: prompt.trim().slice(0, 32), prompt: prompt.trim(), type: kind, status: 'Draft', updated: 'Just now', color: kind === 'Image' ? 'blue' : kind === 'Story' ? 'pink' : 'violet', icon: kind.toLowerCase(), scenes: [] }
+    setProjects(current => [p, ...current])
+    setSelectedProjectId(p.id)
+    setPrompt('')
+    setPage('studio')
+    notify('Project created — add your first scene')
+  }
+  const addScene = () => {
+    if (!sceneDraft.trim()) return notify('Write a scene idea first')
+    if (!selectedProject) return notify('Open a project first')
+    const scene = { id: Date.now(), prompt: sceneDraft.trim(), createdAt: new Date().toISOString() }
+    setProjects(current => current.map(project => project.id === selectedProject.id ? { ...project, scenes: [...(project.scenes || []), scene], status: 'In progress', updated: 'Just now' } : project))
+    setSceneDraft('')
+    notify('Scene added to your project')
+  }
+  const removeScene = (sceneId) => {
+    if (!selectedProject) return
+    setProjects(current => current.map(project => project.id === selectedProject.id ? { ...project, scenes: (project.scenes || []).filter(scene => scene.id !== sceneId), updated: 'Just now' } : project))
+    notify('Scene removed')
+  }
   const pageTitle = nav.find(n => n.id === page)?.label || 'Home'
 
   return <div className="app-shell">
@@ -29,8 +76,8 @@ function App() {
     <div className="content">
       {page==='home'&&<><section className="welcome-row"><div><div className="eyebrow"><Sparkles size={13}/> YOUR CREATIVE UNIVERSE</div><h1>Make something<br/><span>remarkable.</span></h1><p className="subhead">Your ideas deserve a beautiful place to become real.</p></div><div className="welcome-art"><div className="orb orb-one"/><div className="orb orb-two"/><div className="art-core"><Sparkles size={38}/></div><span className="orbit-label">CREATE WITHOUT LIMITS</span></div></section>
       <section className="quick-create"><div className="section-kicker">START CREATING</div><h2>What are we making today?</h2><div className="create-options"><button onClick={()=>{setKind('Video');setPage('create')}}><span className="option-icon purple"><Video/></span><b>AI Video</b><small>Stories in motion</small><ArrowUpRight size={16}/></button><button onClick={()=>{setKind('Image');setPage('create')}}><span className="option-icon blue"><Image/></span><b>AI Image</b><small>Visualize ideas</small><ArrowUpRight size={16}/></button><button onClick={()=>{setKind('Story');setPage('create')}}><span className="option-icon orange"><Mic2/></span><b>Story & Voice</b><small>Give ideas a voice</small><ArrowUpRight size={16}/></button></div></section>
-      <section className="section-block"><div className="section-heading"><div><div className="section-kicker">YOUR WORKSPACE</div><h2>Recent projects</h2></div><button className="text-link" onClick={()=>setPage('projects')}>View all <ArrowUpRight size={15}/></button></div><div className="project-grid">{projects.slice(0,3).map(p=><ProjectCard key={p.id} project={p} onOpen={()=>setPage('studio')}/>)}</div></section></>}
-      {page==='projects'&&<><div className="page-heading"><div><div className="section-kicker">YOUR CREATIVE LIBRARY</div><h1>Projects</h1><p>Everything you make, all in one place.</p></div><button className="primary-btn" onClick={()=>setPage('create')}><Plus size={17}/> New project</button></div><div className="toolbar"><div className="search-box"><Search size={17}/><input placeholder="Search projects..." value={query} onChange={e=>setQuery(e.target.value)}/></div><div className="filters">{['All','Video','Image','Story','Design'].map(f=><button key={f} className={filter===f?'filter active-filter':'filter'} onClick={()=>setFilter(f)}>{f}</button>)}</div><button className="icon-btn filter-icon" onClick={()=>notify('More filters coming soon')}><SlidersHorizontal size={17}/></button></div><div className="project-grid">{filtered.map(p=><ProjectCard key={p.id} project={p} onOpen={()=>setPage('studio')}/>)}</div>{filtered.length===0&&<div className="empty"><FolderOpen size={30}/><b>No projects found</b><span>Try another search or create something new.</span></div>}</>}
+      <section className="section-block"><div className="section-heading"><div><div className="section-kicker">YOUR WORKSPACE</div><h2>Recent projects</h2></div><button className="text-link" onClick={()=>setPage('projects')}>View all <ArrowUpRight size={15}/></button></div><div className="project-grid">{projects.slice(0,3).map(p=><ProjectCard key={p.id} project={p} onOpen={()=>openProject(p.id)}/>)}</div></section></>}
+      {page==='projects'&&<><div className="page-heading"><div><div className="section-kicker">YOUR CREATIVE LIBRARY</div><h1>Projects</h1><p>Everything you make, all in one place.</p></div><button className="primary-btn" onClick={()=>setPage('create')}><Plus size={17}/> New project</button></div><div className="toolbar"><div className="search-box"><Search size={17}/><input placeholder="Search projects..." value={query} onChange={e=>setQuery(e.target.value)}/></div><div className="filters">{['All','Video','Image','Story','Design'].map(f=><button key={f} className={filter===f?'filter active-filter':'filter'} onClick={()=>setFilter(f)}>{f}</button>)}</div><button className="icon-btn filter-icon" onClick={()=>notify('More filters coming soon')}><SlidersHorizontal size={17}/></button></div><div className="project-grid">{filtered.map(p=><ProjectCard key={p.id} project={p} onOpen={()=>openProject(p.id)}/>)}</div>{filtered.length===0&&<div className="empty"><FolderOpen size={30}/><b>No projects found</b><span>Try another search or create something new.</span></div>}</>}
       {page==='create'&&<><div className="page-heading"><div><div className="section-kicker">TURN THOUGHT INTO FORM</div><h1>Create</h1><p>Start with an idea. We'll shape it together.</p></div></div><div className="create-layout"><div className="create-panel"><label className="field-label">CHOOSE YOUR CANVAS</label><div className="kind-grid">{[{name:'Video',Icon:Video,desc:'Motion & stories'},{name:'Image',Icon:Image,desc:'Art & visuals'},{name:'Story',Icon:Mic2,desc:'Words & voice'}].map(({name,Icon,desc})=><button className={kind===name?'kind-card selected':'kind-card'} key={name} onClick={()=>setKind(name)}><Icon size={21}/><b>{name}</b><small>{desc}</small>{kind===name&&<Check className="kind-check" size={16}/>}</button>)}</div><label className="field-label" htmlFor="idea">DESCRIBE YOUR IDEA</label><textarea id="idea" value={prompt} onChange={e=>setPrompt(e.target.value)} placeholder="A cinematic shot of a quiet futuristic city at blue hour..."/><div className="prompt-footer"><span><Sparkles size={14}/> Be as imaginative as you like</span><span>{prompt.length}/500</span></div><button className="primary-btn full" onClick={createProject}><Sparkles size={17}/> Create draft <ArrowUpRight size={16}/></button><p className="fine-print">Demo mode: this creates a local project draft. AI generation will be connected in a later phase.</p></div><div className="inspiration-panel"><div className="inspire-art"><div className="inspire-sun"/><div className="inspire-mountain m1"/><div className="inspire-mountain m2"/><div className="inspire-stars">✦　·　✧</div></div><div className="section-kicker">A LITTLE INSPIRATION</div><h3>Every great creation<br/>starts with a spark.</h3><p>Don't worry about getting it perfect. Start somewhere, then explore.</p></div></div></>}
       {page==='studio'&&<><div className="page-heading"><div><div className="section-kicker">CREATIVE WORKSPACE</div><h1>Studio</h1><p>Your canvas is ready when you are.</p></div><span className="draft-badge">● Draft workspace</span></div><div className="studio-board"><div className="studio-toolbar"><span><Layers3 size={17}/> Untitled composition</span><div><button className="icon-btn" onClick={()=>notify('Export will be available after generation is connected')}><Download size={17}/></button><button className="primary-btn compact" onClick={()=>setPage('create')}><Plus size={15}/> Add scene</button></div></div><div className="canvas-preview"><div className="canvas-glow"><Sparkles size={32}/></div><span>YOUR CREATIVE CANVAS</span><h2>Imagine it.<br/>Then make it real.</h2><p>Start a new creation to see your work here.</p><button className="outline-btn" onClick={()=>setPage('create')}>Start creating <ArrowUpRight size={15}/></button></div><div className="timeline"><div className="timeline-head"><b>Timeline</b><span>00:00 / 00:30</span></div><div className="timeline-track"><div className="track-label">Scene 01</div><div className="track-empty">Add a scene to begin</div></div><div className="timeline-track"><div className="track-label">Audio</div><div className="track-empty audio-track"><span/></div></div></div></div></>}
       {page==='profile'&&<><div className="page-heading"><div><div className="section-kicker">YOUR SPACE</div><h1>Profile</h1><p>Manage your creative workspace.</p></div></div><div className="profile-card"><div className="profile-avatar">U</div><div><h2>Creator</h2><p>Free plan · Personal workspace</p></div><button className="outline-btn" onClick={()=>notify('Account settings coming soon')}><Settings size={15}/> Settings</button></div><div className="settings-list"><div><span>Workspace name</span><b>My workspace</b></div><div><span>Plan</span><b>Free preview</b></div><div><span>Projects created</span><b>{projects.length}</b></div><div><span>App version</span><b>0.1.0 · UI preview</b></div></div></>}
