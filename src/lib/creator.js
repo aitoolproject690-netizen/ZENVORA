@@ -5,7 +5,7 @@ export function generateStory({ idea, genre = 'Adventure', audience = 'General',
   const premise = clean(idea)
   if (!premise) throw new Error('Add an idea before generating a story.')
   const seconds = clamp(Number(duration) || 60, 15, 600)
-  const sceneCount = clamp(Math.round(seconds / 18), 3, 8)
+  const sceneCount = clamp(Math.ceil(seconds / 12), 3, 12)
   const title = premise.split(/[.!?\n]/)[0].slice(0, 54) || 'A New Beginning'
   const isHindi = /^hi|hindi/i.test(language)
   const arcEn = [
@@ -36,7 +36,7 @@ export function generateStory({ idea, genre = 'Adventure', audience = 'General',
       ]
   const scenes = Array.from({ length: sceneCount }, (_, index) => {
     const beat = arc[index % arc.length]
-    const secondsPerScene = Math.max(4, Math.round(seconds / sceneCount))
+    const secondsPerScene = clamp(Math.round(seconds / sceneCount), 4, 12)
     const narrative = isHindi
       ? premise + ' ' + beat[1] + ' ' + beat[2]
       : premise + '. ' + beat[1] + ' ' + beat[2]
