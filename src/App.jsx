@@ -1,12 +1,39 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Home, FolderOpen, Plus, WandSparkles, UserRound, Search, Bell, ArrowUpRight, Play, Image, Video, Mic2, Sparkles, Clock3, MoreHorizontal, ChevronRight, SlidersHorizontal, Layers3, Download, Settings, Menu, X, Check, Trash2 } from 'lucide-react'
+import {
+  Home, FolderOpen, Plus, WandSparkles, UserRound, Search, Bell, ArrowUpRight,
+  Play, Image as ImageIcon, Video, Mic2, Sparkles, Clock3, MoreHorizontal,
+  ChevronRight, SlidersHorizontal, Layers3, Download, Settings, Menu, X, Check,
+  Trash2, BookOpen, Users, Clapperboard, FileText, Copy, ExternalLink, Volume2,
+  Square, Film, Upload, RefreshCw, Palette, Languages, ArrowLeft, Save
+} from 'lucide-react'
+import {
+  generateStory, scenesFromScript, createSceneArtwork, downloadBlob,
+  getVideoMimeType, renderStoryboardVideo, createUploadMetadata, getDefaultCharacters
+} from './lib/creator.js'
 
 const initialProjects = [
-  { id: 1, title: 'Neon Dreams', type: 'Video', status: 'In progress', updated: '2 hours ago', color: 'violet', icon: 'video' },
-  { id: 2, title: 'Brand Identity Kit', type: 'Design', status: 'Ready', updated: 'Yesterday', color: 'blue', icon: 'image' },
-  { id: 3, title: 'Midnight Stories', type: 'Story', status: 'Draft', updated: '2 days ago', color: 'pink', icon: 'story' },
+  { id: 1, title: 'Neon Dreams', type: 'Video', status: 'Draft', updated: 'Sample', color: 'violet', icon: 'video', prompt: 'A city that wakes up when its last light turns on.', scenes: [], characters: [], script: '' },
+  { id: 2, title: 'Brand Identity Kit', type: 'Image', status: 'Draft', updated: 'Sample', color: 'blue', icon: 'image', prompt: 'A clean visual identity for a creative studio.', scenes: [], characters: [], script: '' },
+  { id: 3, title: 'Midnight Stories', type: 'Story', status: 'Draft', updated: 'Sample', color: 'pink', icon: 'story', prompt: 'A mysterious story under a quiet moon.', scenes: [], characters: [], script: '' }
 ]
-const nav = [{ id: 'home', label: 'Home', Icon: Home }, { id: 'projects', label: 'Projects', Icon: FolderOpen }, { id: 'create', label: 'Create', Icon: Plus }, { id: 'studio', label: 'Studio', Icon: WandSparkles }, { id: 'profile', label: 'Profile', Icon: UserRound }]
+const nav = [
+  { id: 'home', label: 'Home', Icon: Home },
+  { id: 'projects', label: 'Projects', Icon: FolderOpen },
+  { id: 'create', label: 'Create', Icon: Plus },
+  { id: 'studio', label: 'Studio', Icon: WandSparkles },
+  { id: 'profile', label: 'Profile', Icon: UserRound }
+]
+const studioTabs = [
+  { id: 'script', label: 'Script', Icon: FileText },
+  { id: 'cast', label: 'Characters', Icon: Users },
+  { id: 'storyboard', label: 'Storyboard', Icon: Layers3 },
+  { id: 'images', label: 'Images', Icon: Palette },
+  { id: 'voice', label: 'Voice', Icon: Volume2 },
+  { id: 'video', label: 'Video', Icon: Clapperboard },
+  { id: 'publish', label: 'Publish', Icon: Upload }
+]
+const safeArray = value => Array.isArray(value) ? value : []
+const cleanFilename = value => String(value || 'zenvora-project').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48) || 'zenvora-project'
 
 function App() {
   const [page, setPage] = useState('home')
@@ -15,25 +42,50 @@ function App() {
       const saved = localStorage.getItem('zenvora.projects.v1')
       if (saved) {
         const parsed = JSON.parse(saved)
-        if (Array.isArray(parsed)) return parsed
+        if (Array.isArray(parsed) && parsed.length) return parsed.map(p => ({ ...p, scenes: safeArray(p.scenes), characters: safeArray(p.characters) }))
       }
     } catch {}
-    return initialProjects.map(project => ({ ...project, prompt: '', scenes: [] }))
+    return initialProjects
   })
   const [selectedProjectId, setSelectedProjectId] = useState(() => {
-    try { return Number(localStorage.getItem('zenvora.selected-project.v1')) || null }
-    catch { return null }
+    try { return Number(localStorage.getItem('zenvora.selected-project.v1')) || null } catch { return null }
   })
-  const [sceneDraft, setSceneDraft] = useState('')
+  const [studioTab, setStudioTab] = useState('script')
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('All')
-  const [prompt, setPrompt] = useState('')
+  const [idea, setIdea] = useState('')
   const [kind, setKind] = useState('Video')
+  const [genre, setGenre] = useState('Adventure')
+  const [audience, setAudience] = useState('Family')
+  const [language, setLanguage] = useState('English')
+  const [tone, setTone] = useState('Hopeful')
+  const [duration, setDuration] = useState('60')
+  const [newCharacter, setNewCharacter] = useState({ name: '', role: 'Supporting character', description: '' })
+  const [sceneDraft, setSceneDraft] = useState('')
   const [toast, setToast] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
-  const filtered = useMemo(() => projects.filter(p => (p.title.toLowerCase().includes(query.toLowerCase())) && (filter === 'All' || p.type === filter)), [projects, query, filter])
-  const selectedProject = projects.find(project => project.id === selectedProjectId) || null
-  const selectedScenes = selectedProject?.scenes || []
+  const [voiceList, setVoiceList] = useState([])
+  const [voiceRate, setVoiceRate] = useState('1')
+  const [voicePitch, setVoicePitch] = useState('1')
+  const [voiceName, setVoiceName] = useState('')
+  const [isSpeaking, setIsSpeaking] = useState(false)
+  const [videoUrl, setVideoUrl] = useState('')
+  const [videoFormat, setVideoFormat] = useState('')
+  const [isExporting, setIsExporting] = useState(false)
+  const [exportError, setExportError] = useState('')
+  const [metadataEdited, setMetadataEdited] = useState(false)
+
+  const selectedProject = projects.find(project => String(project.id) === String(selectedProjectId)) || null
+  const selectedScenes = safeArray(selectedProject?.scenes)
+  const selectedCharacters = safeArray(selectedProject?.characters)
+  const pageTitle = nav.find(item => item.id === page)?.label || 'Home'
+  const filteredProjects = useMemo(() => projects.filter(project =>
+    String(project.title || '').toLowerCase().includes(query.toLowerCase()) &&
+    (filter === 'All' || project.type === filter)
+  ), [projects, query, filter])
+  const metadata = useMemo(() => createUploadMetadata(selectedProject || {}), [selectedProject])
+  const videoSupport = typeof window !== 'undefined' ? getVideoMimeType() : null
+
   useEffect(() => {
     try { localStorage.setItem('zenvora.projects.v1', JSON.stringify(projects)) } catch {}
   }, [projects])
@@ -43,46 +95,324 @@ function App() {
       else localStorage.removeItem('zenvora.selected-project.v1')
     } catch {}
   }, [selectedProjectId])
-  const notify = (msg) => { setToast(msg); window.setTimeout(() => setToast(''), 2400) }
-  const openProject = (id) => { setSelectedProjectId(id); setSceneDraft(''); setPage('studio') }
-  const createProject = () => {
-    if (!prompt.trim()) return notify('Add a short idea first')
-    const p = { id: Date.now(), title: prompt.trim().slice(0, 32), prompt: prompt.trim(), type: kind, status: 'Draft', updated: 'Just now', color: kind === 'Image' ? 'blue' : kind === 'Story' ? 'pink' : 'violet', icon: kind.toLowerCase(), scenes: [] }
-    setProjects(current => [p, ...current])
-    setSelectedProjectId(p.id)
-    setPrompt('')
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return
+    const updateVoices = () => setVoiceList(window.speechSynthesis.getVoices())
+    updateVoices()
+    window.speechSynthesis.addEventListener?.('voiceschanged', updateVoices)
+    return () => window.speechSynthesis.removeEventListener?.('voiceschanged', updateVoices)
+  }, [])
+  useEffect(() => () => {
+    if (videoUrl) URL.revokeObjectURL(videoUrl)
+    if (typeof window !== 'undefined' && window.speechSynthesis) window.speechSynthesis.cancel()
+  }, [videoUrl])
+
+  const notify = message => {
+    setToast(message)
+    window.clearTimeout(notify.timer)
+    notify.timer = window.setTimeout(() => setToast(''), 2600)
+  }
+  const updateSelected = patch => {
+    if (!selectedProject) return
+    setProjects(current => current.map(project => String(project.id) === String(selectedProject.id) ? { ...project, ...patch, updated: 'Just now' } : project))
+  }
+  const updateScene = (sceneId, patch) => {
+    if (!selectedProject) return
+    updateSelected({ scenes: selectedScenes.map(scene => scene.id === sceneId ? { ...scene, ...patch } : scene) })
+  }
+  const openProject = id => {
+    setSelectedProjectId(id)
+    setStudioTab('script')
+    setMenuOpen(false)
     setPage('studio')
-    notify('Project created — add your first scene')
+    setVideoUrl('')
+    setExportError('')
+  }
+  const createProject = () => {
+    if (!idea.trim()) return notify('Pehle apna idea likho')
+    const project = {
+      id: Date.now(),
+      title: idea.trim().split(/[.!?\n]/)[0].slice(0, 42) || 'Untitled project',
+      prompt: idea.trim(),
+      type: kind,
+      status: 'Draft',
+      updated: 'Just now',
+      color: kind === 'Image' ? 'blue' : kind === 'Story' ? 'pink' : 'violet',
+      icon: kind.toLowerCase(),
+      script: '',
+      scenes: [],
+      characters: [],
+      logline: ''
+    }
+    setProjects(current => [project, ...current])
+    setSelectedProjectId(project.id)
+    setIdea('')
+    setStudioTab('script')
+    setPage('studio')
+    notify('Project created — script tab se shuru karo')
+  }
+  const createStory = () => {
+    if (!selectedProject) return notify('Open a project first')
+    try {
+      const result = generateStory({
+        idea: selectedProject.prompt || selectedProject.title,
+        genre,
+        audience,
+        language,
+        tone,
+        duration: Number(duration)
+      })
+      updateSelected({
+        title: selectedProject.title || result.title,
+        script: result.script,
+        logline: result.logline,
+        scenes: result.scenes,
+        characters: result.characters,
+        language,
+        genre,
+        status: 'Story drafted',
+        storyGeneratedAt: result.generatedAt,
+        voiceText: result.script
+      })
+      setStudioTab('script')
+      setVideoUrl('')
+      notify('Story aur ' + result.scenes.length + ' scenes ready')
+    } catch (error) {
+      notify(error.message || 'Story generate nahi hui')
+    }
+  }
+  const buildStoryboard = () => {
+    const scenes = scenesFromScript(selectedProject?.script || '', selectedProject?.prompt)
+    if (!scenes.length) return notify('Pehle script generate ya paste karo')
+    updateSelected({ scenes, status: 'Storyboard ready' })
+    setStudioTab('storyboard')
+    setVideoUrl('')
+    notify(scenes.length + ' storyboard scenes ban gaye')
   }
   const addScene = () => {
-    if (!sceneDraft.trim()) return notify('Write a scene idea first')
-    if (!selectedProject) return notify('Open a project first')
-    const scene = { id: Date.now(), prompt: sceneDraft.trim(), createdAt: new Date().toISOString() }
-    setProjects(current => current.map(project => project.id === selectedProject.id ? { ...project, scenes: [...(project.scenes || []), scene], status: 'In progress', updated: 'Just now' } : project))
+    if (!sceneDraft.trim()) return notify('Scene idea likho')
+    const scene = {
+      id: 'manual-' + Date.now(),
+      title: 'New scene ' + (selectedScenes.length + 1),
+      duration: 4,
+      shot: 'Cinematic medium shot',
+      action: sceneDraft.trim(),
+      narration: sceneDraft.trim(),
+      dialogue: '',
+      visualPrompt: 'Cinematic illustrated scene showing: ' + sceneDraft.trim()
+    }
+    updateSelected({ scenes: [...selectedScenes, scene], status: 'In progress' })
     setSceneDraft('')
-    notify('Scene added to your project')
+    setVideoUrl('')
+    notify('Scene timeline mein add ho gaya')
   }
-  const removeScene = (sceneId) => {
-    if (!selectedProject) return
-    setProjects(current => current.map(project => project.id === selectedProject.id ? { ...project, scenes: (project.scenes || []).filter(scene => scene.id !== sceneId), updated: 'Just now' } : project))
+  const removeScene = sceneId => {
+    updateSelected({ scenes: selectedScenes.filter(scene => scene.id !== sceneId) })
+    setVideoUrl('')
     notify('Scene removed')
   }
-  const pageTitle = nav.find(n => n.id === page)?.label || 'Home'
+  const addCharacter = () => {
+    if (!newCharacter.name.trim()) return notify('Character ka naam likho')
+    const character = { ...newCharacter, id: 'character-' + Date.now() }
+    updateSelected({ characters: [...selectedCharacters, character] })
+    setNewCharacter({ name: '', role: 'Supporting character', description: '' })
+    notify('Character add ho gaya')
+  }
+  const updateCharacter = (id, patch) => updateSelected({ characters: selectedCharacters.map(character => character.id === id ? { ...character, ...patch } : character) })
+  const removeCharacter = id => updateSelected({ characters: selectedCharacters.filter(character => character.id !== id) })
+  const handleSpeak = () => {
+    if (!selectedProject) return
+    if (!window.speechSynthesis || typeof SpeechSynthesisUtterance === 'undefined') return notify('Is browser mein voice playback supported nahi hai')
+    const text = String(selectedProject.voiceText || selectedProject.script || selectedProject.prompt || '').trim()
+    if (!text) return notify('Voice ke liye script ya narration add karo')
+    window.speechSynthesis.cancel()
+    const utterance = new SpeechSynthesisUtterance(text.slice(0, 12000))
+    utterance.lang = language === 'Hindi' || selectedProject.language === 'Hindi' ? 'hi-IN' : 'en-IN'
+    utterance.rate = Number(voiceRate)
+    utterance.pitch = Number(voicePitch)
+    const voice = voiceList.find(item => item.name === voiceName)
+    if (voice) utterance.voice = voice
+    utterance.onstart = () => setIsSpeaking(true)
+    utterance.onend = () => setIsSpeaking(false)
+    utterance.onerror = () => setIsSpeaking(false)
+    window.speechSynthesis.speak(utterance)
+  }
+  const stopSpeak = () => {
+    if (window.speechSynthesis) window.speechSynthesis.cancel()
+    setIsSpeaking(false)
+  }
+  const exportScript = () => {
+    const blob = new Blob([selectedProject?.script || ''], { type: 'text/plain;charset=utf-8' })
+    downloadBlob(blob, cleanFilename(selectedProject?.title) + '-script.txt')
+    notify('Script file downloaded')
+  }
+  const exportArtwork = (scene, index) => {
+    const svg = createSceneArtwork(scene, index)
+    downloadBlob(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }), cleanFilename(selectedProject?.title) + '-scene-' + (index + 1) + '.svg')
+  }
+  const exportVideo = async () => {
+    if (!selectedScenes.length) return setExportError('Video ke liye pehle storyboard scenes banao.')
+    setIsExporting(true)
+    setExportError('')
+    try {
+      const result = await renderStoryboardVideo(selectedScenes)
+      if (videoUrl) URL.revokeObjectURL(videoUrl)
+      const url = URL.createObjectURL(result.blob)
+      setVideoUrl(url)
+      setVideoFormat(result.extension.toUpperCase())
+      downloadBlob(result.blob, cleanFilename(selectedProject.title) + '-video.' + result.extension)
+      notify(result.extension.toUpperCase() + ' video export complete')
+    } catch (error) {
+      setExportError(error.message || 'Video export failed in this browser.')
+    } finally {
+      setIsExporting(false)
+    }
+  }
+  const copyText = async (text, label) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      notify(label + ' copied')
+    } catch {
+      const field = document.createElement('textarea')
+      field.value = text
+      document.body.appendChild(field)
+      field.select()
+      const ok = document.execCommand('copy')
+      field.remove()
+      notify(ok ? label + ' copied' : 'Copy not supported by this browser')
+    }
+  }
+  const openNav = id => {
+    setPage(id)
+    setMenuOpen(false)
+  }
 
   return <div className="app-shell">
-    <aside className="sidebar"><div className="brand"><div className="brand-mark"><Sparkles size={19}/></div><span>ZENVORA</span><small>STUDIO</small></div><div className="workspace"><div className="avatar">Z</div><div><b>My workspace</b><small>Free plan</small></div><MoreHorizontal size={18}/></div><nav>{nav.map(({id,label,Icon}) => <button key={id} className={page===id?'nav-item active':'nav-item'} onClick={()=>setPage(id)}><Icon size={18}/>{label}{id==='create'&&<span className="nav-plus">+</span>}</button>)}</nav><div className="sidebar-bottom"><div className="upgrade-card"><div className="glow-icon"><Sparkles size={17}/></div><b>Make more magic</b><p>Unlock your creative flow with more studio tools.</p><button onClick={()=>notify('Plans are coming soon')}>Explore plans <ArrowUpRight size={14}/></button></div><button className="nav-item muted" onClick={()=>notify('Settings are coming soon')}><Settings size={18}/> Settings</button><div className="user-mini"><div className="avatar small">U</div><div><b>Your account</b><small>Free workspace</small></div><MoreHorizontal size={18}/></div></div></aside>
-    <main className="main-area"><header className="topbar"><button className="mobile-menu" onClick={()=>setMenuOpen(!menuOpen)}>{menuOpen?<X/>:<Menu/>}</button><div className="crumb">Workspace <ChevronRight size={14}/> <b>{pageTitle}</b></div><div className="top-actions"><span className="status-pill"><i/> All systems normal</span><button className="icon-btn" aria-label="Notifications" onClick={()=>notify('You are all caught up')}><Bell size={18}/></button><div className="avatar small">U</div></div></header>
-    {menuOpen&&<div className="mobile-nav">{nav.map(({id,label,Icon})=><button key={id} onClick={()=>{setPage(id);setMenuOpen(false)}}><Icon size={18}/>{label}</button>)}</div>}
-    <div className="content">
-      {page==='home'&&<><section className="welcome-row"><div><div className="eyebrow"><Sparkles size={13}/> YOUR CREATIVE UNIVERSE</div><h1>Make something<br/><span>remarkable.</span></h1><p className="subhead">Your ideas deserve a beautiful place to become real.</p></div><div className="welcome-art"><div className="orb orb-one"/><div className="orb orb-two"/><div className="art-core"><Sparkles size={38}/></div><span className="orbit-label">CREATE WITHOUT LIMITS</span></div></section>
-      <section className="quick-create"><div className="section-kicker">START CREATING</div><h2>What are we making today?</h2><div className="create-options"><button onClick={()=>{setKind('Video');setPage('create')}}><span className="option-icon purple"><Video/></span><b>AI Video</b><small>Stories in motion</small><ArrowUpRight size={16}/></button><button onClick={()=>{setKind('Image');setPage('create')}}><span className="option-icon blue"><Image/></span><b>AI Image</b><small>Visualize ideas</small><ArrowUpRight size={16}/></button><button onClick={()=>{setKind('Story');setPage('create')}}><span className="option-icon orange"><Mic2/></span><b>Story & Voice</b><small>Give ideas a voice</small><ArrowUpRight size={16}/></button></div></section>
-      <section className="section-block"><div className="section-heading"><div><div className="section-kicker">YOUR WORKSPACE</div><h2>Recent projects</h2></div><button className="text-link" onClick={()=>setPage('projects')}>View all <ArrowUpRight size={15}/></button></div><div className="project-grid">{projects.slice(0,3).map(p=><ProjectCard key={p.id} project={p} onOpen={()=>openProject(p.id)}/>)}</div></section></>}
-      {page==='projects'&&<><div className="page-heading"><div><div className="section-kicker">YOUR CREATIVE LIBRARY</div><h1>Projects</h1><p>Everything you make, all in one place.</p></div><button className="primary-btn" onClick={()=>setPage('create')}><Plus size={17}/> New project</button></div><div className="toolbar"><div className="search-box"><Search size={17}/><input placeholder="Search projects..." value={query} onChange={e=>setQuery(e.target.value)}/></div><div className="filters">{['All','Video','Image','Story','Design'].map(f=><button key={f} className={filter===f?'filter active-filter':'filter'} onClick={()=>setFilter(f)}>{f}</button>)}</div><button className="icon-btn filter-icon" onClick={()=>notify('More filters coming soon')}><SlidersHorizontal size={17}/></button></div><div className="project-grid">{filtered.map(p=><ProjectCard key={p.id} project={p} onOpen={()=>openProject(p.id)}/>)}</div>{filtered.length===0&&<div className="empty"><FolderOpen size={30}/><b>No projects found</b><span>Try another search or create something new.</span></div>}</>}
-      {page==='create'&&<><div className="page-heading"><div><div className="section-kicker">TURN THOUGHT INTO FORM</div><h1>Create</h1><p>Start with an idea. We'll shape it together.</p></div></div><div className="create-layout"><div className="create-panel"><label className="field-label">CHOOSE YOUR CANVAS</label><div className="kind-grid">{[{name:'Video',Icon:Video,desc:'Motion & stories'},{name:'Image',Icon:Image,desc:'Art & visuals'},{name:'Story',Icon:Mic2,desc:'Words & voice'}].map(({name,Icon,desc})=><button className={kind===name?'kind-card selected':'kind-card'} key={name} onClick={()=>setKind(name)}><Icon size={21}/><b>{name}</b><small>{desc}</small>{kind===name&&<Check className="kind-check" size={16}/>}</button>)}</div><label className="field-label" htmlFor="idea">DESCRIBE YOUR IDEA</label><textarea id="idea" value={prompt} onChange={e=>setPrompt(e.target.value)} placeholder="A cinematic shot of a quiet futuristic city at blue hour..."/><div className="prompt-footer"><span><Sparkles size={14}/> Be as imaginative as you like</span><span>{prompt.length}/500</span></div><button className="primary-btn full" onClick={createProject}><Sparkles size={17}/> Create draft <ArrowUpRight size={16}/></button><p className="fine-print">Demo mode: this creates a local project draft. AI generation will be connected in a later phase.</p></div><div className="inspiration-panel"><div className="inspire-art"><div className="inspire-sun"/><div className="inspire-mountain m1"/><div className="inspire-mountain m2"/><div className="inspire-stars">✦　·　✧</div></div><div className="section-kicker">A LITTLE INSPIRATION</div><h3>Every great creation<br/>starts with a spark.</h3><p>Don't worry about getting it perfect. Start somewhere, then explore.</p></div></div></>}
-      {page==='studio'&&<><div className="page-heading"><div><div className="section-kicker">CREATIVE WORKSPACE</div><h1>{selectedProject ? selectedProject.title : 'Studio'}</h1><p>{selectedProject ? 'Build your idea one scene at a time.' : 'Open a project or create your first one.'}</p></div><span className="draft-badge">● {selectedProject ? selectedProject.status : 'Ready'}</span></div>{selectedProject ? <><div className="studio-board"><div className="studio-toolbar"><span><Layers3 size={17}/> {selectedProject.title}</span><div><button className="icon-btn" aria-label="Export project" onClick={()=>notify('Export is planned for a later phase')}><Download size={17}/></button><button className="primary-btn compact" onClick={()=>document.getElementById('scene-idea')?.focus()}><Plus size={15}/> Add scene</button></div></div><div className="canvas-preview"><div className="canvas-glow"><Sparkles size={32}/></div><span>{selectedProject.type.toUpperCase()} PROJECT · {selectedScenes.length} SCENES</span><h2>{selectedProject.title}</h2><p className="canvas-description">{selectedProject.prompt || 'Your original idea will appear here.'}</p></div><div className="timeline"><div className="timeline-head"><b>Scene timeline</b><span>{String(selectedScenes.length).padStart(2, '0')} scenes</span></div>{selectedScenes.length ? selectedScenes.map((scene, index)=><div className="scene-row" key={scene.id}><div className="scene-number">{String(index + 1).padStart(2, '0')}</div><div className="scene-copy"><b>Scene {String(index + 1).padStart(2, '0')}</b><p>{scene.prompt}</p></div><button className="scene-remove" aria-label={'Remove scene ' + (index + 1)} onClick={()=>removeScene(scene.id)}><Trash2 size={15}/></button></div>) : <div className="scene-empty"><Layers3 size={22}/><b>No scenes yet</b><span>Add your first scene idea below to start building this project.</span></div>}</div></div><div className="scene-composer"><label className="field-label" htmlFor="scene-idea">ADD A SCENE IDEA</label><textarea id="scene-idea" value={sceneDraft} onChange={e=>setSceneDraft(e.target.value)} maxLength={500} placeholder="Describe what happens in this scene..." /><div className="scene-composer-footer"><span>{sceneDraft.length}/500 · Saved on this device</span><button className="primary-btn compact" onClick={addScene}><Plus size={15}/> Add to timeline</button></div></div></> : <div className="studio-empty"><div className="canvas-glow"><Sparkles size={30}/></div><h2>Your studio is ready</h2><p>Create a project, then open it here to build its scenes.</p><button className="primary-btn" onClick={()=>setPage('create')}><Plus size={16}/> Create a project</button></div>}</>}
-      {page==='profile'&&<><div className="page-heading"><div><div className="section-kicker">YOUR SPACE</div><h1>Profile</h1><p>Manage your creative workspace.</p></div></div><div className="profile-card"><div className="profile-avatar">U</div><div><h2>Creator</h2><p>Free plan · Personal workspace</p></div><button className="outline-btn" onClick={()=>notify('Account settings coming soon')}><Settings size={15}/> Settings</button></div><div className="settings-list"><div><span>Workspace name</span><b>My workspace</b></div><div><span>Plan</span><b>Free preview</b></div><div><span>Projects created</span><b>{projects.length}</b></div><div><span>App version</span><b>0.1.0 · UI preview</b></div></div></>}
-    </div><footer className="footer"><span>© 2026 ZENVORA STUDIO</span><span>Made for the makers <Sparkles size={12}/></span></footer></main>{toast&&<div className="toast"><Check size={16}/>{toast}</div>}</div>
+    <aside className="sidebar">
+      <div className="brand"><div className="brand-mark"><Sparkles size={19}/></div><span>ZENVORA</span><small>STUDIO</small></div>
+      <div className="workspace"><div className="avatar">Z</div><div><b>My workspace</b><small>Local creator studio</small></div><MoreHorizontal size={18}/></div>
+      <nav>{nav.map(({ id, label, Icon }) => <button key={id} className={page === id ? 'nav-item active' : 'nav-item'} onClick={() => openNav(id)}><Icon size={18}/>{label}{id === 'create' && <span className="nav-plus">+</span>}</button>)}</nav>
+      <div className="sidebar-bottom">
+        <div className="upgrade-card"><div className="glow-icon"><Sparkles size={17}/></div><b>Create on your device</b><p>Scripts, scene boards and project drafts stay in this browser.</p><button onClick={() => openNav('create')}>Start a project <ArrowUpRight size={14}/></button></div>
+        <button className="nav-item muted" onClick={() => notify('Settings are not part of this local preview')}><Settings size={18}/> Settings</button>
+        <div className="user-mini"><div className="avatar small">U</div><div><b>Creator</b><small>Device workspace</small></div><MoreHorizontal size={18}/></div>
+      </div>
+    </aside>
+    <main className="main-area">
+      <header className="topbar">
+        <button className="mobile-menu" aria-label="Open navigation" onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X/> : <Menu/>}</button>
+        <div className="crumb">Workspace <ChevronRight size={14}/> <b>{pageTitle}</b></div>
+        <div className="top-actions"><span className="status-pill"><i/> Local workspace</span><button className="icon-btn" aria-label="Notifications" onClick={() => notify('Projects auto-save on this device')}><Bell size={18}/></button><div className="avatar small">U</div></div>
+      </header>
+      {menuOpen && <div className="mobile-nav">{nav.map(({ id, label, Icon }) => <button key={id} onClick={() => openNav(id)}><Icon size={18}/>{label}</button>)}</div>}
+      <div className="content">
+        {page === 'home' && <>
+          <section className="welcome-row"><div><div className="eyebrow"><Sparkles size={13}/> YOUR CREATIVE UNIVERSE</div><h1>Make something<br/><span>remarkable.</span></h1><p className="subhead">From an idea to a scene-by-scene story, in one mobile studio.</p><button className="primary-btn home-cta" onClick={() => openNav('create')}><Plus size={17}/> Start creating</button></div><div className="welcome-art"><div className="orb orb-one"/><div className="orb orb-two"/><div className="art-core"><Sparkles size={38}/></div><span className="orbit-label">CREATE WITHOUT LIMITS</span></div></section>
+          <section className="quick-create"><div className="section-kicker">START CREATING</div><h2>What are we making today?</h2><div className="create-options"><button onClick={() => { setKind('Video'); openNav('create') }}><span className="option-icon purple"><Video/></span><b>Story to Video</b><small>Build a scene sequence</small><ArrowUpRight size={16}/></button><button onClick={() => { setKind('Image'); openNav('create') }}><span className="option-icon blue"><ImageIcon/></span><b>Scene Artwork</b><small>Create vector frames</small><ArrowUpRight size={16}/></button><button onClick={() => { setKind('Story'); openNav('create') }}><span className="option-icon orange"><Mic2/></span><b>Script & Voice</b><small>Write and preview narration</small><ArrowUpRight size={16}/></button></div></section>
+          <section className="section-block"><div className="section-heading"><div><div className="section-kicker">YOUR WORKSPACE</div><h2>Recent projects</h2></div><button className="text-link" onClick={() => openNav('projects')}>View all <ArrowUpRight size={15}/></button></div><div className="project-grid">{projects.slice(0, 3).map(project => <ProjectCard key={project.id} project={project} onOpen={() => openProject(project.id)}/>)}</div></section>
+        </>}
+        {page === 'projects' && <>
+          <div className="page-heading"><div><div className="section-kicker">YOUR CREATIVE LIBRARY</div><h1>Projects</h1><p>Everything you make, saved in this browser.</p></div><button className="primary-btn" onClick={() => openNav('create')}><Plus size={17}/> New project</button></div>
+          <div className="toolbar"><div className="search-box"><Search size={17}/><input placeholder="Search projects..." value={query} onChange={event => setQuery(event.target.value)}/></div><div className="filters">{['All', 'Video', 'Image', 'Story'].map(value => <button key={value} className={filter === value ? 'filter active-filter' : 'filter'} onClick={() => setFilter(value)}>{value}</button>)}</div><button className="icon-btn filter-icon" onClick={() => setFilter('All')}><SlidersHorizontal size={17}/></button></div>
+          <div className="project-grid">{filteredProjects.map(project => <ProjectCard key={project.id} project={project} onOpen={() => openProject(project.id)}/>)}</div>
+          {filteredProjects.length === 0 && <div className="empty"><FolderOpen size={30}/><b>No projects found</b><span>Try another search or create something new.</span></div>}
+        </>}
+        {page === 'create' && <>
+          <div className="page-heading"><div><div className="section-kicker">TURN THOUGHT INTO FORM</div><h1>Create</h1><p>Start with a premise. Your studio will shape it into a script and storyboard.</p></div></div>
+          <div className="create-layout"><div className="create-panel">
+            <label className="field-label">CHOOSE YOUR PROJECT</label>
+            <div className="kind-grid">{[{ name: 'Video', Icon: Video, desc: 'Story to motion' }, { name: 'Image', Icon: ImageIcon, desc: 'Visual frames' }, { name: 'Story', Icon: BookOpen, desc: 'Script & dialogue' }].map(({ name, Icon, desc }) => <button className={kind === name ? 'kind-card selected' : 'kind-card'} key={name} onClick={() => setKind(name)}><Icon size={21}/><b>{name}</b><small>{desc}</small>{kind === name && <Check className="kind-check" size={16}/>}</button>)}</div>
+            <label className="field-label" htmlFor="idea">YOUR STORY IDEA</label><textarea id="idea" value={idea} maxLength={500} onChange={event => setIdea(event.target.value)} placeholder="A young inventor finds a tiny planet inside an old music box..."/>
+            <div className="prompt-footer"><span><Sparkles size={14}/> One clear idea is enough to start</span><span>{idea.length}/500</span></div>
+            <button className="primary-btn full" disabled={!idea.trim()} onClick={createProject}><Sparkles size={17}/> Create project <ArrowUpRight size={16}/></button>
+            <p className="fine-print">Your drafts are stored locally in this browser. No cloud account or paid API is connected.</p>
+          </div><div className="inspiration-panel"><div className="inspire-art"><div className="inspire-sun"/><div className="inspire-mountain m1"/><div className="inspire-mountain m2"/><div className="inspire-stars">✦　·　✧</div></div><div className="section-kicker">A LITTLE INSPIRATION</div><h3>Every great creation<br/>starts with a spark.</h3><p>Build the idea first. Add characters, scenes, voice and video when you are ready.</p></div></div>
+        </>}
+        {page === 'studio' && <>
+          {!selectedProject ? <div className="studio-empty"><div className="canvas-glow"><Sparkles size={30}/></div><h2>Your studio is ready</h2><p>Create a project, then open it here to build its script, cast and storyboard.</p><button className="primary-btn" onClick={() => openNav('create')}><Plus size={16}/> Create a project</button></div> : <>
+            <div className="studio-title-row"><div><div className="section-kicker">CREATIVE WORKSPACE</div><h1>{selectedProject.title}</h1><p>{selectedProject.logline || selectedProject.prompt || 'Build your idea one step at a time.'}</p></div><span className="draft-badge">● {selectedProject.status || 'Draft'}</span></div>
+            <div className="studio-stepbar">{studioTabs.map(({ id, label, Icon }, index) => <button key={id} className={studioTab === id ? 'studio-step active' : 'studio-step'} onClick={() => setStudioTab(id)}><span className="step-index">{index + 1}</span><Icon size={15}/><span>{label}</span></button>)}</div>
+            <div className="studio-workspace">
+              {studioTab === 'script' && <div className="tool-panel">
+                <div className="panel-heading"><div><div className="section-kicker">01 / STORY ENGINE</div><h2>Script & story generator</h2><p>Local template-based story drafting. It does not call an external AI model.</p></div><span className="local-tag">LOCAL MODE</span></div>
+                <div className="generator-grid">
+                  <div className="field"><label htmlFor="genre">Genre</label><select id="genre" value={genre} onChange={event => setGenre(event.target.value)}>{['Adventure', 'Fantasy', 'Comedy', 'Drama', 'Mystery', 'Science fiction', 'Educational'].map(value => <option key={value}>{value}</option>)}</select></div>
+                  <div className="field"><label htmlFor="audience">Audience</label><select id="audience" value={audience} onChange={event => setAudience(event.target.value)}>{['Family', 'Kids', 'Teens', 'General', 'Adults'].map(value => <option key={value}>{value}</option>)}</select></div>
+                  <div className="field"><label htmlFor="language">Language</label><select id="language" value={language} onChange={event => setLanguage(event.target.value)}><option>English</option><option>Hindi</option></select></div>
+                  <div className="field"><label htmlFor="tone">Tone</label><select id="tone" value={tone} onChange={event => setTone(event.target.value)}>{['Hopeful', 'Funny', 'Mysterious', 'Emotional', 'Epic', 'Calm'].map(value => <option key={value}>{value}</option>)}</select></div>
+                  <div className="field"><label htmlFor="duration">Target duration</label><select id="duration" value={duration} onChange={event => setDuration(event.target.value)}><option value="30">30 seconds</option><option value="60">1 minute</option><option value="120">2 minutes</option><option value="180">3 minutes</option><option value="300">5 minutes</option></select></div>
+                </div>
+                <div className="field"><label htmlFor="story-premise">Story premise</label><textarea id="story-premise" className="large-textarea" value={selectedProject.prompt || ''} maxLength={1000} onChange={event => updateSelected({ prompt: event.target.value })} placeholder="Write the central idea of your story..."/></div>
+                <div className="button-row"><button className="primary-btn" onClick={createStory}><WandSparkles size={16}/> Generate story & scenes</button><button className="outline-btn" disabled={!selectedProject.script} onClick={exportScript}><Download size={15}/> Download script</button></div>
+                {selectedProject.script && <div className="script-editor"><div className="script-heading"><b>Generated script</b><span>{selectedProject.script.length} characters · autosaved</span></div><textarea value={selectedProject.script} onChange={event => updateSelected({ script: event.target.value })} aria-label="Edit generated script" /><div className="button-row"><button className="outline-btn" onClick={() => copyText(selectedProject.script, 'Script')}><Copy size={15}/> Copy script</button><button className="primary-btn compact" onClick={buildStoryboard}><Layers3 size={15}/> Build storyboard</button></div></div>}
+                <p className="fine-print">This offline story engine uses structured templates. It is not a connected large language model and needs your editing for a polished final script.</p>
+              </div>}
+              {studioTab === 'cast' && <div className="tool-panel">
+                <div className="panel-heading"><div><div className="section-kicker">02 / CAST DESIGN</div><h2>Characters</h2><p>Build a cast and keep their details with this project.</p></div><span className="count-chip">{selectedCharacters.length} characters</span></div>
+                {selectedCharacters.length ? <div className="character-grid">{selectedCharacters.map((character, index) => <div className="character-card" key={character.id}><div className="character-avatar">{String(character.name || 'C').slice(0, 1).toUpperCase()}</div><div className="character-fields"><input aria-label="Character name" value={character.name} onChange={event => updateCharacter(character.id, { name: event.target.value })}/><input aria-label="Character role" value={character.role} onChange={event => updateCharacter(character.id, { role: event.target.value })}/><textarea aria-label="Character description" value={character.description} onChange={event => updateCharacter(character.id, { description: event.target.value })}/></div><button className="scene-remove" aria-label="Remove character" onClick={() => removeCharacter(character.id)}><Trash2 size={15}/></button></div>)}</div> : <div className="empty-inline"><Users size={24}/><b>No characters yet</b><span>Generate a story to get starter characters, or add your own below.</span></div>}
+                <div className="add-character"><div className="section-kicker">ADD A CHARACTER</div><div className="generator-grid"><div className="field"><label htmlFor="char-name">Name</label><input id="char-name" value={newCharacter.name} onChange={event => setNewCharacter({ ...newCharacter, name: event.target.value })} placeholder="Character name"/></div><div className="field"><label htmlFor="char-role">Role</label><input id="char-role" value={newCharacter.role} onChange={event => setNewCharacter({ ...newCharacter, role: event.target.value })}/></div></div><div className="field"><label htmlFor="char-desc">Appearance & personality</label><textarea id="char-desc" value={newCharacter.description} onChange={event => setNewCharacter({ ...newCharacter, description: event.target.value })} placeholder="Describe their appearance, personality and motivation..."/></div><button className="primary-btn compact" onClick={addCharacter}><Plus size={15}/> Add character</button></div>
+                <p className="fine-print">Character cards are written descriptions, not generated character portraits.</p>
+              </div>}
+              {studioTab === 'storyboard' && <div className="tool-panel">
+                <div className="panel-heading"><div><div className="section-kicker">03 / VISUAL PLAN</div><h2>Scene storyboard</h2><p>Turn script beats into editable scenes and camera notes.</p></div><span className="count-chip">{selectedScenes.length} scenes</span></div>
+                <div className="button-row"><button className="primary-btn" disabled={!selectedProject.script} onClick={buildStoryboard}><RefreshCw size={15}/> Rebuild from script</button><button className="outline-btn" onClick={() => setStudioTab('images')}><Palette size={15}/> Open artwork</button></div>
+                <div className="scene-list">{selectedScenes.map((scene, index) => <div className="scene-editor-card" key={scene.id}><div className="scene-editor-top"><span className="scene-number">{String(index + 1).padStart(2, '0')}</span><input aria-label="Scene title" value={scene.title || ''} onChange={event => updateScene(scene.id, { title: event.target.value })}/><button className="scene-remove" aria-label="Remove scene" onClick={() => removeScene(scene.id)}><Trash2 size={15}/></button></div><div className="scene-edit-grid"><div className="field"><label>Duration (seconds)</label><input type="number" min="2" max="12" value={scene.duration || 4} onChange={event => updateScene(scene.id, { duration: Math.max(2, Math.min(12, Number(event.target.value) || 2)) })}/></div><div className="field"><label>Camera / shot</label><input value={scene.shot || ''} onChange={event => updateScene(scene.id, { shot: event.target.value })}/></div></div><div className="field"><label>Narration / action</label><textarea value={scene.narration || scene.action || ''} onChange={event => updateScene(scene.id, { narration: event.target.value, action: event.target.value })}/></div><div className="field"><label>Image prompt</label><textarea value={scene.visualPrompt || ''} onChange={event => updateScene(scene.id, { visualPrompt: event.target.value })}/></div></div>)}</div>
+                <div className="add-scene"><div className="field"><label htmlFor="scene-draft">Add a scene manually</label><textarea id="scene-draft" value={sceneDraft} onChange={event => setSceneDraft(event.target.value)} placeholder="What happens in this scene?"/></div><button className="primary-btn compact" onClick={addScene}><Plus size={15}/> Add scene</button></div>
+                <p className="fine-print">Storyboard scenes, timing and camera notes save automatically on this device.</p>
+              </div>}
+              {studioTab === 'images' && <div className="tool-panel">
+                <div className="panel-heading"><div><div className="section-kicker">04 / ARTWORK</div><h2>Scene image generator</h2><p>Create downloadable, procedural vector artwork from your storyboard prompts.</p></div><span className="local-tag">SVG ART</span></div>
+                <div className="notice-panel"><Palette size={18}/><span>This creates original abstract SVG frames locally. It is not a diffusion/AI image model and does not generate photorealistic images.</span></div>
+                {selectedScenes.length ? <div className="artwork-grid">{selectedScenes.map((scene, index) => {
+                  const svg = createSceneArtwork(scene, index)
+                  const src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)
+                  return <article className="artwork-card" key={scene.id}><img src={src} alt={'Procedural artwork for ' + scene.title}/><div className="artwork-info"><b>{String(index + 1).padStart(2, '0')} · {scene.title}</b><p>{scene.visualPrompt || scene.action}</p><button className="outline-btn compact" onClick={() => exportArtwork(scene, index)}><Download size={14}/> Download SVG</button></div></article>
+                })}</div> : <div className="empty-inline"><ImageIcon size={24}/><b>No scene artwork yet</b><span>Generate a story or create storyboard scenes first.</span></div>}
+              </div>}
+              {studioTab === 'voice' && <div className="tool-panel">
+                <div className="panel-heading"><div><div className="section-kicker">05 / NARRATION</div><h2>Voice studio</h2><p>Preview narration with voices installed on this device or browser.</p></div><span className="local-tag">DEVICE TTS</span></div>
+                <div className="notice-panel"><Volume2 size={18}/><span>Voice is played by your browser's built-in speech engine. ZENVORA does not create or download a voice audio file in this version.</span></div>
+                <div className="field"><label htmlFor="voice-text">Narration text</label><textarea id="voice-text" className="large-textarea" value={selectedProject.voiceText ?? selectedProject.script ?? selectedProject.prompt ?? ''} onChange={event => updateSelected({ voiceText: event.target.value })} placeholder="Paste or edit the narration you want to hear..."/></div>
+                <div className="generator-grid">
+                  <div className="field"><label htmlFor="voice-choice">Device voice ({voiceList.length} available)</label><select id="voice-choice" value={voiceName} onChange={event => setVoiceName(event.target.value)}><option value="">Default voice</option>{voiceList.map(voice => <option key={voice.name} value={voice.name}>{voice.name} · {voice.lang}</option>)}</select></div>
+                  <div className="field"><label htmlFor="voice-rate">Speaking speed: {voiceRate}×</label><input id="voice-rate" type="range" min="0.7" max="1.3" step="0.1" value={voiceRate} onChange={event => setVoiceRate(event.target.value)}/></div>
+                  <div className="field"><label htmlFor="voice-pitch">Voice pitch: {voicePitch}</label><input id="voice-pitch" type="range" min="0.7" max="1.3" step="0.1" value={voicePitch} onChange={event => setVoicePitch(event.target.value)}/></div>
+                </div>
+                <div className="button-row"><button className="primary-btn" onClick={handleSpeak} disabled={isSpeaking}><Play size={15}/> Play voice preview</button><button className="outline-btn" onClick={stopSpeak}><Square size={14}/> Stop</button></div>
+                <p className="fine-print">{voiceList.length ? 'The available voices depend on your Android/browser language packs.' : 'No device voices were detected yet. Voice availability depends on browser and Android speech services.'}</p>
+              </div>}
+              {studioTab === 'video' && <div className="tool-panel">
+                <div className="panel-heading"><div><div className="section-kicker">06 / VIDEO EDITOR</div><h2>Video builder & export</h2><p>Render your storyboard as a simple animated 720p scene video in the browser.</p></div><span className="local-tag">{videoSupport ? videoSupport[1].toUpperCase() + ' READY' : 'CHECKING'}</span></div>
+                <div className="notice-panel"><Film size={18}/><span>Exports include animated scene cards and text only. This first renderer does not embed narration, music, generated character animation or advanced transitions.</span></div>
+                {selectedScenes.length ? <><div className="video-summary"><div><b>{selectedScenes.length} scenes</b><span>{selectedScenes.reduce((total, scene) => total + (Number(scene.duration) || 4), 0)} seconds total</span></div><div><b>1280 × 720</b><span>24 fps browser canvas render</span></div><div><b>{videoSupport ? videoSupport[1].toUpperCase() : 'Unavailable'}</b><span>{videoSupport ? 'Supported by this browser' : 'No supported recorder format found'}</span></div></div><div className="video-preview-box">{videoUrl ? <video controls playsInline src={videoUrl}/> : <div className="video-placeholder"><div className="canvas-glow"><Play size={28}/></div><b>Storyboard video preview</b><span>Render your scenes to preview and download the clip.</span></div>}</div><div className="button-row"><button className="primary-btn" disabled={isExporting || !videoSupport} onClick={exportVideo}>{isExporting ? <RefreshCw size={15} className="spin"/> : <Download size={15}/>} {isExporting ? 'Rendering video…' : videoSupport?.[1] === 'mp4' ? 'Export MP4' : 'Export video (WebM)'}</button><button className="outline-btn" onClick={() => setStudioTab('storyboard')}><Layers3 size={15}/> Edit scenes</button></div>{exportError && <div className="error-panel">{exportError}</div>}{videoFormat && <p className="success-note"><Check size={15}/> Last export: {videoFormat}. File saved from this browser.</p>}</> : <div className="empty-inline"><Film size={24}/><b>Storyboard is empty</b><span>Add at least one scene before rendering video.</span><button className="primary-btn compact" onClick={() => setStudioTab('storyboard')}>Go to storyboard</button></div>}
+                {!videoSupport && <p className="fine-print">This browser did not report an MP4 or WebM MediaRecorder format. A server-side encoder would be needed for reliable MP4 export on all devices.</p>}
+              </div>}
+              {studioTab === 'publish' && <div className="tool-panel">
+                <div className="panel-heading"><div><div className="section-kicker">07 / RELEASE</div><h2>YouTube publishing kit</h2><p>Prepare the video metadata and continue to YouTube Studio.</p></div><span className="local-tag">MANUAL UPLOAD</span></div>
+                <div className="notice-panel"><Upload size={18}/><span>Automatic publishing is not connected. It requires a verified Google OAuth app and a secure server-side token flow; this static GitHub Pages app has neither.</span></div>
+                <div className="field"><label htmlFor="yt-title">YouTube title</label><input id="yt-title" maxLength={100} value={selectedProject.youtubeTitle ?? metadata.title} onChange={event => updateSelected({ youtubeTitle: event.target.value })}/><small className="field-hint">{(selectedProject.youtubeTitle ?? metadata.title).length}/100 characters</small></div>
+                <div className="field"><label htmlFor="yt-desc">Description</label><textarea id="yt-desc" className="large-textarea" value={selectedProject.youtubeDescription ?? metadata.description} onChange={event => updateSelected({ youtubeDescription: event.target.value })}/></div>
+                <div className="field"><label>Suggested tags</label><div className="tag-row">{metadata.tags.map(tag => <span key={tag}>#{tag.replace(/\s+/g, '')}</span>)}</div></div>
+                <div className="button-row"><button className="primary-btn" onClick={() => copyText('Title: ' + (selectedProject.youtubeTitle ?? metadata.title) + '\n\nDescription:\n' + (selectedProject.youtubeDescription ?? metadata.description) + '\n\nTags: ' + metadata.tags.join(', '), 'Upload details')}><Copy size={15}/> Copy upload details</button><a className="outline-btn" href="https://studio.youtube.com/channel/UC/videos/upload" target="_blank" rel="noreferrer">Open YouTube Studio <ExternalLink size={14}/></a></div>
+                <div className="publish-checklist"><b>Before you publish</b><label><input type="checkbox"/> Exported video is ready on this device</label><label><input type="checkbox"/> Reviewed title, description and audience setting</label><label><input type="checkbox"/> Checked music, images and usage rights</label></div>
+                <p className="fine-print">Upload the exported video manually in YouTube Studio. ZENVORA cannot confirm publication or monetization from this page.</p>
+              </div>}
+            </div>
+            <div className="studio-footer-actions"><button className="text-link" onClick={() => openNav('projects')}><ArrowLeft size={15}/> Back to projects</button><span><Save size={14}/> Auto-saved in this browser</span><button className="text-link" onClick={() => setStudioTab(studioTabs[Math.min(studioTabs.findIndex(tab => tab.id === studioTab) + 1, studioTabs.length - 1)].id)}>Next step <ArrowUpRight size={15}/></button></div>
+          </>}
+        </>}
+        {page === 'profile' && <><div className="page-heading"><div><div className="section-kicker">YOUR SPACE</div><h1>Profile</h1><p>Local workspace information.</p></div></div><div className="profile-card"><div className="profile-avatar">U</div><div><h2>Creator</h2><p>Device-only workspace · No account connected</p></div><button className="outline-btn" onClick={() => notify('Cloud accounts are not connected')}><Settings size={15}/> Settings</button></div><div className="settings-list"><div><span>Workspace</span><b>My workspace</b></div><div><span>Storage</span><b>Browser localStorage</b></div><div><span>Projects created</span><b>{projects.length}</b></div><div><span>App version</span><b>0.2.0 · Local creator MVP</b></div></div><div className="notice-panel profile-notice"><Save size={18}/><span>Projects stay on this browser/device. Clearing browser storage or switching devices may remove or hide them. Cloud backup is not configured.</span></div></>}
+      </div>
+      <footer className="footer"><span>© 2026 ZENVORA STUDIO</span><span>Built for the makers <Sparkles size={12}/></span></footer>
+    </main>
+    {toast && <div className="toast"><Check size={16}/>{toast}</div>}
+  </div>
 }
-function ProjectCard({project,onOpen}) { const Icon=project.icon==='image'?Image:project.icon==='story'?Mic2:Video; return <button className="project-card" onClick={onOpen}><div className={'project-thumb '+project.color}><div className="thumb-shape"/><div className="thumb-icon"><Icon size={23}/></div><span className="thumb-type">{project.type}</span><MoreHorizontal className="thumb-more" size={18}/></div><div className="project-info"><div><b>{project.title}</b><small><Clock3 size={12}/> {project.updated}</small></div><span className={'project-status '+(project.status==='Ready'?'ready':'')}>{project.status}</span></div></button> }
+
+function ProjectCard({ project, onOpen }) {
+  const Icon = project.icon === 'image' ? ImageIcon : project.icon === 'story' ? Mic2 : Video
+  const count = safeArray(project.scenes).length
+  return <button className="project-card" onClick={onOpen}><div className={'project-thumb ' + (project.color || 'violet')}><div className="thumb-shape"/><div className="thumb-icon"><Icon size={23}/></div><span className="thumb-type">{project.type}</span><MoreHorizontal className="thumb-more" size={18}/></div><div className="project-info"><div><b>{project.title}</b><small><Clock3 size={12}/> {count} scenes · {project.updated || 'Saved'}</small></div><span className={'project-status ' + (project.status === 'Ready' ? 'ready' : '')}>{project.status || 'Draft'}</span></div></button>
+}
 
 export default App
