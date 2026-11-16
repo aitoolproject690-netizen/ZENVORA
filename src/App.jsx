@@ -35,6 +35,29 @@ const studioTabs = [
 const safeArray = value => Array.isArray(value) ? value : []
 const cleanFilename = value => String(value || 'zenvora-project').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48) || 'zenvora-project'
 
+
+async function compressSceneImage(file) {
+  if (!file || !file.type.startsWith('image/')) throw new Error('Choose an image file.')
+  if (file.size > 12 * 1024 * 1024) throw new Error('Image must be smaller than 12 MB.')
+  const source = await new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('Could not read this image.'))
+    reader.onload = () => {
+      const image = new Image()
+      image.onerror = () => reject(new Error('This image format could not be opened.'))
+      image.onload = () => resolve(image)
+      image.src = reader.result
+    }
+    reader.readAsDataURL(file)
+  })
+  const scale = Math.min(1, 1280 / source.width, 720 / source.height)
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(source.width * scale))
+  canvas.height = Math.max(1, Math.round(source.height * scale))
+  canvas.getContext('2d').drawImage(source, 0, 0, canvas.width, canvas.height)
+  return canvas.toDataURL('image/jpeg', 0.76)
+}
+
 function App() {
   const [page, setPage] = useState('home')
   const [projects, setProjects] = useState(() => {
@@ -189,6 +212,19 @@ function App() {
     setVideoUrl('')
     notify(scenes.length + ' storyboard scenes ban gaye')
   }
+
+  const uploadSceneImage = async (sceneId, file) => {
+    if (!file) return
+    try {
+      const imageDataUrl = await compressSceneImage(file)
+      updateScene(sceneId, { imageDataUrl })
+      setVideoUrl('')
+      notify('Scene image added and saved on this device')
+    } catch (error) {
+      notify(error.message || 'Image upload failed')
+    }
+  }
+
   const addScene = () => {
     if (!sceneDraft.trim()) return notify('Scene idea likho')
     const scene = {
@@ -361,12 +397,12 @@ function App() {
                 <p className="fine-print">Storyboard scenes, timing and camera notes save automatically on this device.</p>
               </div>}
               {studioTab === 'images' && <div className="tool-panel">
-                <div className="panel-heading"><div><div className="section-kicker">04 / ARTWORK</div><h2>Scene image generator</h2><p>Create downloadable, procedural vector artwork from your storyboard prompts.</p></div><span className="local-tag">SVG ART</span></div>
-                <div className="notice-panel"><Palette size={18}/><span>This creates original abstract SVG frames locally. It is not a diffusion/AI image model and does not generate photorealistic images.</span></div>
+                <div className="panel-heading"><div><div className="section-kicker">04 / ARTWORK</div><h2>Scene image generator</h2><p>Create a vector frame or add your own photo to each scene. Custom photos are included in video exports.</p></div><span className="local-tag">SVG ART</span></div>
+                <div className="notice-panel"><Palette size={18}/><span>SVG frames are procedural artwork, not AI image generation. You can also add a photo from your phone; it is resized and saved locally.</span></div>
                 {selectedScenes.length ? <div className="artwork-grid">{selectedScenes.map((scene, index) => {
                   const svg = createSceneArtwork(scene, index)
                   const src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)
-                  return <article className="artwork-card" key={scene.id}><img src={src} alt={'Procedural artwork for ' + scene.title}/><div className="artwork-info"><b>{String(index + 1).padStart(2, '0')} · {scene.title}</b><p>{scene.visualPrompt || scene.action}</p><button className="outline-btn compact" onClick={() => exportArtwork(scene, index)}><Download size={14}/> Download SVG</button></div></article>
+                  return <article className="artwork-card" key={scene.id}><img src={src} alt={'Procedural artwork for ' + scene.title}/><div className="artwork-info"><b>{String(index + 1).padStart(2, '0')} · {scene.title}</b><p>{scene.visualPrompt || scene.action}</p><div className="button-row"><button className="outline-btn compact" onClick={() => exportArtwork(scene, index)}><Download size={14}/> Download SVG</button><label className="outline-btn compact" style={{ cursor: 'pointer' }}><ImageIcon size={14}/> {scene.imageDataUrl ? 'Replace photo' : 'Use my photo'}<input type="file" accept="image/*" hidden onChange={event => uploadSceneImage(scene.id, event.target.files?.[0])}/></label></div>{scene.imageDataUrl && <p className="success-note"><Check size={13}/> Custom image saved for this scene</p>}</div></article>
                 })}</div> : <div className="empty-inline"><ImageIcon size={24}/><b>No scene artwork yet</b><span>Generate a story or create storyboard scenes first.</span></div>}
               </div>}
               {studioTab === 'voice' && <div className="tool-panel">
@@ -383,7 +419,7 @@ function App() {
               </div>}
               {studioTab === 'video' && <div className="tool-panel">
                 <div className="panel-heading"><div><div className="section-kicker">06 / VIDEO EDITOR</div><h2>Video builder & export</h2><p>Render your storyboard as a simple animated 720p scene video in the browser.</p></div><span className="local-tag">{videoSupport ? videoSupport[1].toUpperCase() + ' READY' : 'CHECKING'}</span></div>
-                <div className="notice-panel"><Film size={18}/><span>Exports include animated scene cards and text only. This first renderer does not embed narration, music, generated character animation or advanced transitions.</span></div>
+                <div className="notice-panel"><Film size={18}/><span>Exports include animated scene cards and any custom scene photos you added. Narration audio, music, generated character animation and multitrack editing are not included.</span></div>
                 {selectedScenes.length ? <><div className="video-summary"><div><b>{selectedScenes.length} scenes</b><span>{selectedScenes.reduce((total, scene) => total + (Number(scene.duration) || 4), 0)} seconds total</span></div><div><b>1280 × 720</b><span>24 fps browser canvas render</span></div><div><b>{videoSupport ? videoSupport[1].toUpperCase() : 'Unavailable'}</b><span>{videoSupport ? 'Supported by this browser' : 'No supported recorder format found'}</span></div></div><div className="video-preview-box">{videoUrl ? <video controls playsInline src={videoUrl}/> : <div className="video-placeholder"><div className="canvas-glow"><Play size={28}/></div><b>Storyboard video preview</b><span>Render your scenes to preview and download the clip.</span></div>}</div><div className="button-row"><button className="primary-btn" disabled={isExporting || !videoSupport} onClick={exportVideo}>{isExporting ? <RefreshCw size={15} className="spin"/> : <Download size={15}/>} {isExporting ? 'Rendering video…' : videoSupport?.[1] === 'mp4' ? 'Export MP4' : 'Export video (WebM)'}</button><button className="outline-btn" onClick={() => setStudioTab('storyboard')}><Layers3 size={15}/> Edit scenes</button></div>{exportError && <div className="error-panel">{exportError}</div>}{videoFormat && <p className="success-note"><Check size={15}/> Last export: {videoFormat}. File saved from this browser.</p>}</> : <div className="empty-inline"><Film size={24}/><b>Storyboard is empty</b><span>Add at least one scene before rendering video.</span><button className="primary-btn compact" onClick={() => setStudioTab('storyboard')}>Go to storyboard</button></div>}
                 {!videoSupport && <p className="fine-print">This browser did not report an MP4 or WebM MediaRecorder format. A server-side encoder would be needed for reliable MP4 export on all devices.</p>}
               </div>}
