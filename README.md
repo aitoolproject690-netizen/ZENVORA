@@ -1,30 +1,45 @@
 # ZENVORA
 
-A mobile-first, dark creative workspace built with React + Vite.
+A mobile-first, dark creative studio built with React + Vite. The current MVP is local-first: project drafts are saved in the browser on the device where they were created.
 
 ## Run locally
 
-```bash
-npm install
-npm run dev
-```
+- Install: npm install
+- Start: npm run dev
 
-## Build
+## Test and build
 
-```bash
-npm run build
-npm run preview
-```
+- Unit tests: npm test
+- Production build: npm run build
+- Preview: npm run preview
 
-## Working MVP features
+## Implemented in the local creator MVP
 
-- Mobile-first dashboard, project library, create flow, Studio, and profile
-- Create Video, Image, and Story project drafts
-- Persist projects and scene timelines in this browser's local storage
-- Open a project from the library and edit its scene list in Studio
-- Add and remove scenes; search and filter projects
-- Responsive dark interface for phone screens
+- Mobile-first dashboard, project library, create flow, seven-step Studio, and profile
+- Device-local project saving, scene edits, cast details, and upload metadata
+- Template-based English/Hindi story drafting with genre, audience, tone, and short-form duration controls
+- Editable script with plain-text download
+- Script-to-storyboard conversion, manual scene editing, camera notes, and per-scene duration
+- Procedural SVG scene artwork generated on-device and downloadable per scene
+- Voice playback through the browser/Android speech synthesis engine, with available voice, speed, and pitch settings
+- Browser canvas video rendering with a capability-detected MP4 or WebM download
+- YouTube title, description, tag suggestions, and a link to continue a manual upload in YouTube Studio
+- Automated Node.js unit tests and production build checks in GitHub Actions
 
-## Not connected yet
+## Important feature boundaries
 
-AI media generation, user accounts, cross-device cloud sync, payments, and real media export are not implemented. Project data currently stays in the browser/device where it was created. No paid API keys are required for the current MVP.
+This release does not connect to an external large language model. The story generator is a structured template-based writing helper, not an AI LLM.
+- SVG artwork is procedural vector art, not an AI image model and not photorealistic image generation.
+- Voice preview uses voices installed by the browser/device. It does not create a downloadable narration audio file.
+- Video export creates animated scene-card footage from the storyboard. It does not yet add recorded voice, music, imported footage, character animation, or a multitrack editor.
+- Export format depends on browser MediaRecorder support. MP4 is offered only when the current browser reports MP4 support; otherwise the browser exports WebM. No server-side FFmpeg conversion is configured.
+- YouTube publishing is manual. Automatic publishing requires a verified Google OAuth app and a secure backend token flow, neither of which is configured for this static GitHub Pages app.
+- Login, cloud sync, cross-device backup, payments, and remote asset storage are not connected.
+
+## Data and privacy
+
+Projects are stored in this browser's localStorage. They do not sync to another phone or browser. Clearing browser/site data can remove local project drafts. No paid API key is required for the current local creator workflow.
+
+## Deployment
+
+The GitHub Pages workflow runs npm test and npm run build before publishing the dist directory.
