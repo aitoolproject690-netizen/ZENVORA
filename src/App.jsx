@@ -152,27 +152,28 @@ function App() {
     setExportError('')
   }
   const createProject = () => {
-    if (!idea.trim()) return notify('Pehle apna idea likho')
-    const project = {
-      id: Date.now(),
-      title: idea.trim().split(/[.!?\n]/)[0].slice(0, 42) || 'Untitled project',
-      prompt: idea.trim(),
-      type: kind,
-      status: 'Draft',
-      updated: 'Just now',
-      color: kind === 'Image' ? 'blue' : kind === 'Story' ? 'pink' : 'violet',
-      icon: kind.toLowerCase(),
-      script: '',
-      scenes: [],
-      characters: [],
-      logline: ''
+    if (!idea.trim()) return notify('Pehle apna prompt likho')
+    try {
+      const generated = generateStory({ idea: idea.trim(), genre, audience, language, tone, duration: Number(duration) })
+      const project = {
+        id: Date.now(),
+        title: generated.title || idea.trim().slice(0, 42) || 'Untitled project',
+        prompt: idea.trim(), type: 'Video', status: 'Storyboard ready', updated: 'Just now',
+        color: 'violet', icon: 'video', script: generated.script, scenes: generated.scenes,
+        characters: generated.characters, logline: generated.logline, language, genre, audience, tone,
+        voiceText: generated.script, storyGeneratedAt: generated.generatedAt
+      }
+      setProjects(current => [project, ...current])
+      setSelectedProjectId(project.id)
+      setIdea('')
+      setStudioTab('images')
+      setPage('studio')
+      setVideoUrl('')
+      setExportError('')
+      notify('One-prompt project ready: story, characters aur scenes ban gaye')
+    } catch (error) {
+      notify(error.message || 'Project generate nahi ho paya')
     }
-    setProjects(current => [project, ...current])
-    setSelectedProjectId(project.id)
-    setIdea('')
-    setStudioTab('script')
-    setPage('studio')
-    notify('Project created — script tab se shuru karo')
   }
   const createStory = () => {
     if (!selectedProject) return notify('Open a project first')
@@ -354,11 +355,16 @@ function App() {
           {filteredProjects.length === 0 && <div className="empty"><FolderOpen size={30}/><b>No projects found</b><span>Try another search or create something new.</span></div>}
         </>}
         {page === 'create' && <>
-          <div className="page-heading"><div><div className="section-kicker">TURN THOUGHT INTO FORM</div><h1>Create</h1><p>Start with a premise. Your studio will shape it into a script and storyboard.</p></div></div>
+          <div className="page-heading"><div><div className="section-kicker">ONE PROMPT VIDEO CREATOR</div><h1>Create a video</h1><p>Ek idea likho. ZENVORA automatically story, characters aur scene-by-scene storyboard banayega.</p></div></div>
           <div className="create-layout"><div className="create-panel">
-            <label className="field-label">CHOOSE YOUR PROJECT</label>
-            <div className="kind-grid">{[{ name: 'Video', Icon: Video, desc: 'Story to motion' }, { name: 'Image', Icon: ImageIcon, desc: 'Visual frames' }, { name: 'Story', Icon: BookOpen, desc: 'Script & dialogue' }].map(({ name, Icon, desc }) => <button className={kind === name ? 'kind-card selected' : 'kind-card'} key={name} onClick={() => setKind(name)}><Icon size={21}/><b>{name}</b><small>{desc}</small>{kind === name && <Check className="kind-check" size={16}/>}</button>)}</div>
-            <label className="field-label" htmlFor="idea">YOUR STORY IDEA</label><textarea id="idea" value={idea} maxLength={500} onChange={event => setIdea(event.target.value)} placeholder="A young inventor finds a tiny planet inside an old music box..."/>
+            <label className="field-label">VIDEO SETTINGS</label>
+            <div className="generator-grid">
+              <div className="field"><label htmlFor="create-language">Language</label><select id="create-language" value={language} onChange={event => setLanguage(event.target.value)}><option>Hindi</option><option>English</option></select></div>
+              <div className="field"><label htmlFor="create-genre">Genre</label><select id="create-genre" value={genre} onChange={event => setGenre(event.target.value)}>{['Adventure', 'Fantasy', 'Comedy', 'Drama', 'Mystery', 'Science fiction', 'Educational'].map(value => <option key={value}>{value}</option>)}</select></div>
+              <div className="field"><label htmlFor="create-tone">Mood</label><select id="create-tone" value={tone} onChange={event => setTone(event.target.value)}>{['Hopeful', 'Funny', 'Mysterious', 'Emotional', 'Epic', 'Calm'].map(value => <option key={value}>{value}</option>)}</select></div>
+              <div className="field"><label htmlFor="create-duration">Length</label><select id="create-duration" value={duration} onChange={event => setDuration(event.target.value)}><option value="30">30 seconds</option><option value="60">1 minute</option><option value="120">2 minutes</option></select></div>
+            </div>
+            <label className="field-label" htmlFor="idea">YOUR VIDEO PROMPT</label><textarea id="idea" value={idea} maxLength={500} onChange={event => setIdea(event.target.value)} placeholder="एक छोटा बच्चा जंगल में खोए शेर के बच्चे को उसकी माँ से मिलाता है। मजेदार हिंदी कार्टून कहानी..."/>
             <div className="prompt-footer"><span><Sparkles size={14}/> One clear idea is enough to start</span><span>{idea.length}/500</span></div>
             <button className="primary-btn full" disabled={!idea.trim()} onClick={createProject}><Sparkles size={17}/> Create project <ArrowUpRight size={16}/></button>
             <p className="fine-print">Your drafts are stored locally in this browser. No cloud account or paid API is connected.</p>
