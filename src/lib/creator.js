@@ -211,15 +211,12 @@ function drawFrame(ctx, scene, index, elapsed, width, height, sceneImage = null)
 
 export async function renderStoryboardVideo(scenes, { secondsPerScene = 3, fps = 24 } = {}) {
   if (!Array.isArray(scenes) || !scenes.length) throw new Error('Add at least one storyboard scene before exporting.')
-  const sceneImages = await Promise.all(scenes.map(scene => {
-    if (!scene.imageDataUrl) return Promise.resolve(null)
-    return new Promise(resolve => {
-      const image = new Image()
-      image.onload = () => resolve(image)
-      image.onerror = () => resolve(null)
-      image.src = scene.imageDataUrl
-    })
-  }))
+  const sceneImages = await Promise.all(scenes.map((scene, index) => new Promise(resolve => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => resolve(null)
+    image.src = scene.imageDataUrl || ('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(createSceneArtwork(scene, index)))
+  })))
   if (typeof document === 'undefined' || typeof MediaRecorder === 'undefined') throw new Error('This browser does not support video recording.')
   const supported = getVideoMimeType()
   if (!supported) throw new Error('This browser does not report a supported MP4 or WebM recording format.')
