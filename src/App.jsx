@@ -88,9 +88,10 @@ function App() {
   const [toast, setToast] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
   const [voiceList, setVoiceList] = useState([])
-  const [voiceRate, setVoiceRate] = useState('1')
+  const [voiceRate, setVoiceRate] = useState('0.9')
   const [voicePitch, setVoicePitch] = useState('1')
-  const [voiceName, setVoiceName] = useState('')
+  const [voiceName, setVoiceName] = useState('auto')
+  const [voiceStyle, setVoiceStyle] = useState('storytelling')
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [videoUrl, setVideoUrl] = useState('')
   const [videoFormat, setVideoFormat] = useState('')
@@ -260,19 +261,37 @@ function App() {
   const handleSpeak = () => {
     if (!selectedProject) return
     if (!window.speechSynthesis || typeof SpeechSynthesisUtterance === 'undefined') return notify('Is browser mein voice playback supported nahi hai')
-    const text = String(selectedProject.voiceText || selectedProject.script || selectedProject.prompt || '').trim()
+    const text = String(selectedProject.voiceText || selectedProject.script || selectedProject.prompt || '').trim().slice(0, 12000)
     if (!text) return notify('Voice ke liye script ya narration add karo')
     window.speechSynthesis.cancel()
-    const utterance = new SpeechSynthesisUtterance(text.slice(0, 12000))
-    utterance.lang = language === 'Hindi' || selectedProject.language === 'Hindi' ? 'hi-IN' : 'en-IN'
-    utterance.rate = Number(voiceRate)
-    utterance.pitch = Number(voicePitch)
-    const voice = voiceList.find(item => item.name === voiceName)
-    if (voice) utterance.voice = voice
-    utterance.onstart = () => setIsSpeaking(true)
-    utterance.onend = () => setIsSpeaking(false)
-    utterance.onerror = () => setIsSpeaking(false)
-    window.speechSynthesis.speak(utterance)
+    const isHindi = /^hi|hindi/i.test(selectedProject.language || language)
+    const targetLang = isHindi ? 'hi-IN' : 'en-IN'
+    const voice = voiceName === 'auto'
+      ? voiceList.find(item => item.lang?.toLowerCase().startsWith(isHindi ? 'hi' : 'en-in')) || voiceList.find(item => item.lang?.toLowerCase().startsWith(isHindi ? 'hi' : 'en'))
+      : voiceList.find(item => item.name === voiceName)
+    const sentences = text.match(/[^।.!?]+[।.!?]?/gu) || [text]
+    const chunks = []
+    let pending = ''
+    sentences.forEach(sentence => {
+      const next = (pending + ' ' + sentence).trim()
+      if (next.length > 220 && pending) { chunks.push(pending); pending = sentence.trim() }
+      else pending = next
+    })
+    if (pending) chunks.push(pending)
+    let index = 0
+    const speakNext = () => {
+      if (index >= chunks.length) { setIsSpeaking(false); return }
+      const utterance = new SpeechSynthesisUtterance(chunks[index])
+      utterance.lang = targetLang
+      utterance.rate = Number(voiceRate)
+      utterance.pitch = Number(voicePitch)
+      if (voice) utterance.voice = voice
+      utterance.onstart = () => setIsSpeaking(true)
+      utterance.onend = () => { index += 1; speakNext() }
+      utterance.onerror = () => setIsSpeaking(false)
+      window.speechSynthesis.speak(utterance)
+    }
+    speakNext()
   }
   const stopSpeak = () => {
     if (window.speechSynthesis) window.speechSynthesis.cancel()
@@ -416,9 +435,10 @@ function App() {
                 <div className="notice-panel"><Volume2 size={18}/><span>Voice is played by your browser's built-in speech engine. ZENVORA does not create or download a voice audio file in this version.</span></div>
                 <div className="field"><label htmlFor="voice-text">Narration text</label><textarea id="voice-text" className="large-textarea" value={selectedProject.voiceText ?? selectedProject.script ?? selectedProject.prompt ?? ''} onChange={event => updateSelected({ voiceText: event.target.value })} placeholder="Paste or edit the narration you want to hear..."/></div>
                 <div className="generator-grid">
-                  <div className="field"><label htmlFor="voice-choice">Device voice ({voiceList.length} available)</label><select id="voice-choice" value={voiceName} onChange={event => setVoiceName(event.target.value)}><option value="">Default voice</option>{voiceList.map(voice => <option key={voice.name} value={voice.name}>{voice.name} · {voice.lang}</option>)}</select></div>
-                  <div className="field"><label htmlFor="voice-rate">Speaking speed: {voiceRate}×</label><input id="voice-rate" type="range" min="0.7" max="1.3" step="0.1" value={voiceRate} onChange={event => setVoiceRate(event.target.value)}/></div>
-                  <div className="field"><label htmlFor="voice-pitch">Voice pitch: {voicePitch}</label><input id="voice-pitch" type="range" min="0.7" max="1.3" step="0.1" value={voicePitch} onChange={event => setVoicePitch(event.target.value)}/></div>
+                  <div className="field"><label htmlFor="voice-style">Narration style</label><select id="voice-style" value={voiceStyle} onChange={event => { const style = event.target.value; setVoiceStyle(style); const settings = { storytelling: ['0.9', '1'], mystery: ['0.82', '0.92'], energetic: ['1.05', '1.08'], calm: ['0.82', '0.96'] }; setVoiceRate(settings[style][0]); setVoicePitch(settings[style][1]) }}><option value="storytelling">Natural storytelling</option><option value="mystery">Mystery / suspense</option><option value="energetic">Energetic / happy</option><option value="calm">Soft / calm</option></select></div>
+                  <div className="field"><label htmlFor="voice-choice">Device voice ({voiceList.length} available)</label><select id="voice-choice" value={voiceName} onChange={event => setVoiceName(event.target.value)}><option value="auto">Auto-match project language</option>{voiceList.map(voice => <option key={voice.name} value={voice.name}>{voice.name} · {voice.lang}</option>)}</select></div>
+                  <div className="field"><label htmlFor="voice-rate">Speaking speed: {voiceRate}×</label><input id="voice-rate" type="range" min="0.7" max="1.3" step="0.05" value={voiceRate} onChange={event => setVoiceRate(event.target.value)}/></div>
+                  <div className="field"><label htmlFor="voice-pitch">Voice pitch: {voicePitch}</label><input id="voice-pitch" type="range" min="0.7" max="1.3" step="0.05" value={voicePitch} onChange={event => setVoicePitch(event.target.value)}/></div>
                 </div>
                 <div className="button-row"><button className="primary-btn" onClick={handleSpeak} disabled={isSpeaking}><Play size={15}/> Play voice preview</button><button className="outline-btn" onClick={stopSpeak}><Square size={14}/> Stop</button></div>
                 <p className="fine-print">{voiceList.length ? 'The available voices depend on your Android/browser language packs.' : 'No device voices were detected yet. Voice availability depends on browser and Android speech services.'}</p>
